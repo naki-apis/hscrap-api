@@ -24,48 +24,46 @@ class NHentaiScraper:
         self.driver = None
     
     def _create_driver(self):
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36')
-        chrome_options.add_argument('--accept-language=en-US,en;q=0.9')
-        chrome_options.add_argument('--sec-ch-ua="Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="99"')
-        chrome_options.add_argument('--sec-ch-ua-mobile=?0')
-        chrome_options.add_argument('--sec-ch-ua-platform="Windows"')
-        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        
-        base_dir = Path(__file__).parent.absolute()
-        selenium_dir = base_dir / "selenium"
-        
-        chrome_binary_path = selenium_dir / "chrome"
-        chromedriver_path = selenium_dir / "chromedriver"
-        
-        if not chrome_binary_path.exists():
-            chrome_binary_path = selenium_dir / "chrome-linux64" / "chrome"
-        
-        if not chromedriver_path.exists():
-            chromedriver_path = selenium_dir / "chromedriver-linux64" / "chromedriver"
-        
-        if chrome_binary_path.exists():
-            chrome_options.binary_location = str(chrome_binary_path)
-        
         try:
-            if chromedriver_path.exists():
-                service = Service(executable_path=str(chromedriver_path))
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            else:
-                self.driver = webdriver.Chrome(options=chrome_options)
+            chrome_options = Options()
+            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--window-size=1920,1080')
+            chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
             
+            self.driver = webdriver.Chrome(options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             return True
         except Exception as e:
-            return False
+            print(f"Error creando driver básico: {e}")
+            
+            try:
+                base_dir = Path(__file__).parent.absolute()
+                selenium_dir = base_dir / "selenium"
+                
+                chrome_path = selenium_dir / "chrome"
+                chromedriver_path = selenium_dir / "chromedriver"
+                
+                if chrome_path.exists():
+                    chrome_options.binary_location = str(chrome_path)
+                    print(f"Usando Chrome en: {chrome_path}")
+                
+                if chromedriver_path.exists():
+                    service = Service(executable_path=str(chromedriver_path))
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                else:
+                    self.driver = webdriver.Chrome(options=chrome_options)
+                
+                self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                print("Driver creado con rutas personalizadas")
+                return True
+            except Exception as e2:
+                print(f"Error también con rutas personalizadas: {e2}")
+                return False
     
     def search(self, query, page=1):
         url = f"https://nhentai.net/search/?q={query}&page={page}"
@@ -124,18 +122,12 @@ class NHentaiScraper:
         }
     
     def data(self, code):
-        if not self._create_driver():
-            return {
-                'title': '',
-                'code': int(code) if code.isdigit() else 0,
-                'cover_image': '',
-                'tags': {},
-                'image_links': [],
-                'error': 'Failed to create driver'
-            }
-        
         try:
+            if not self._create_driver():
+                raise Exception("No se pudo crear el driver de Chrome")
+            
             url = f"https://nhentai.net/g/{code}/"
+            print(f"Accediendo a: {url}")
             
             self.driver.get(url)
             
@@ -143,19 +135,23 @@ class NHentaiScraper:
             html_content = ""
             
             for attempt in range(max_attempts):
-                time.sleep(3 + attempt * 2)
+                wait_time = 3 + attempt * 2
+                print(f"Intento {attempt + 1}, esperando {wait_time} segundos...")
+                time.sleep(wait_time)
                 
                 page_source = self.driver.page_source
                 if "Just a moment" in page_source or "Verifying you are human" in page_source:
+                    print(f"Cloudflare detectado, esperando más...")
                     time.sleep(5)
                     continue
                 
-                if "gallery" in page_source.lower() or "cover" in page_source.lower():
+                if len(page_source) > 1000:
                     html_content = page_source
+                    print(f"HTML obtenido: {len(html_content)} caracteres")
                     break
             
-            if not html_content or len(html_content) < 100:
-                raise Exception("Empty or short HTML content")
+            if not html_content:
+                raise Exception("No se pudo obtener contenido HTML después de varios intentos")
             
             soup = BeautifulSoup(html_content, 'html.parser')
             
@@ -181,7 +177,7 @@ class NHentaiScraper:
                         tags_dict[field_name] = tags
             
             gallery_id = None
-            pattern = re.compile(r'//t[1249]\.nhentai\.net/galleries/(\d+)/(\d+)t\.(webp|jpg|png)')
+            pattern = re.compile(r'//t[1249]\.nhentai\.net/galleries/(\d+)/(\d+)t\.(webp|jpg|png|jpeg)')
             
             for img in soup.find_all('img'):
                 src = img.get('src') or img.get('data-src', '')
@@ -195,6 +191,8 @@ class NHentaiScraper:
             cover_image = ""
             
             if gallery_id:
+                print(f"ID de galería encontrado: {gallery_id}")
+                
                 total_pages_from_tags = 0
                 if 'Pages' in tags_dict and tags_dict['Pages']:
                     try:
@@ -220,6 +218,8 @@ class NHentaiScraper:
                 if total_pages_from_tags == 0 and found_thumbnails:
                     total_pages_from_tags = found_thumbnails[-1]['page_num']
                 
+                print(f"Páginas totales: {total_pages_from_tags}, Miniaturas: {len(found_thumbnails)}")
+                
                 if total_pages_from_tags > 0:
                     extensions_count = {}
                     for thumb in found_thumbnails:
@@ -244,7 +244,7 @@ class NHentaiScraper:
                 if image_links:
                     cover_image = image_links[0]
             
-            return {
+            result = {
                 'title': title,
                 'code': int(code),
                 'cover_image': cover_image,
@@ -252,7 +252,10 @@ class NHentaiScraper:
                 'image_links': image_links
             }
             
+            return result
+            
         except Exception as e:
+            print(f"Error en data(): {e}")
             return {
                 'title': '',
                 'code': int(code) if code.isdigit() else 0,
