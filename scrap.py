@@ -1,3 +1,4 @@
+
 import requests
 from bs4 import BeautifulSoup
 import re
@@ -8,9 +9,15 @@ from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 class NHentaiScraper:
-    def __init__(self):
+    def __init__(self, base_dir=None):
+        self.base_dir = Path(base_dir) if base_dir else Path(__file__).parent.absolute()
+        self.selenium_dir = self.base_dir / "selenium"
         self.session = requests.Session()
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -21,11 +28,24 @@ class NHentaiScraper:
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
         }
-        
         self.driver = None
-        self.setup_selenium()
     
-    def setup_selenium(self):
+    def _setup_selenium_paths(self):
+        chrome_path = self.selenium_dir / "chrome"
+        if not chrome_path.exists():
+            chrome_path = self.selenium_dir / "chrome-linux64" / "chrome"
+            if not chrome_path.exists():
+                chrome_path = self.selenium_dir / "chrome.exe"
+        
+        chromedriver_path = self.selenium_dir / "chromedriver"
+        if not chromedriver_path.exists():
+            chromedriver_path = self.selenium_dir / "chromedriver-linux64" / "chromedriver"
+            if not chromedriver_path.exists():
+                chromedriver_path = self.selenium_dir / "chromedriver.exe"
+        
+        return chrome_path, chromedriver_path
+    
+    def _create_driver(self):
         chrome_options = Options()
         chrome_options.add_argument('--headless=new')
         chrome_options.add_argument('--no-sandbox')
@@ -37,39 +57,71 @@ class NHentaiScraper:
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
-        base_dir = Path(__file__).parent.absolute()
-        selenium_dir = base_dir / "selenium"
-        
-        chrome_path = selenium_dir / "chrome"
-        chromedriver_path = selenium_dir / "chromedriver"
+        chrome_path, chromedriver_path = self._setup_selenium_paths()
         
         if chrome_path.exists():
             chrome_options.binary_location = str(chrome_path)
-            print(f"Chrome encontrado en: {chrome_path}")
-        else:
-            print(f"Chrome NO encontrado en: {chrome_path}")
         
         try:
             if chromedriver_path.exists():
-                print(f"Chromedriver encontrado en: {chromedriver_path}")
                 service = Service(executable_path=str(chromedriver_path))
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
             else:
-                print(f"Chromedriver NO encontrado en: {chromedriver_path}")
-                print("Intentando sin ruta específica...")
                 self.driver = webdriver.Chrome(options=chrome_options)
             
             self.driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
                 'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined});'
             })
-            print("Selenium inicializado correctamente")
             
+            return True
         except Exception as e:
-            print(f"Error inicializando Selenium: {e}")
-            print(f"¿Existe selenium_dir? {selenium_dir.exists()}")
-            print(f"¿Existe chrome? {chrome_path.exists()}")
-            print(f"¿Existe chromedriver? {chromedriver_path.exists()}")
-            self.driver = None
+            return False
+    
+    def _wait_for_cloudflare(self, timeout=30):
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            page_source = self.driver.page_source
+            if any(text in page_source for text in ["Just a moment", "Verifying you are human", "cloudflare", "Challenge"]):
+                time.sleep(random.uniform(3, 6))
+                self.driver.execute_script("window.scrollBy(0, 200);")
+                time.sleep(random.uniform(1, 3))
+            else:
+                return True
+        return False
+    
+    def scrape_with_selenium(self, url, wait_for_element=None, timeout=20):
+        if not self._create_driver():
+            return None
+        
+        try:
+            self.driver.get(url)
+            time.sleep(random.uniform(2, 4))
+            
+            self._wait_for_cloudflare()
+            
+            if wait_for_element:
+                by, selector = wait_for_element
+                try:
+                    WebDriverWait(self.driver, timeout).until(
+                        EC.presence_of_element_located((by, selector))
+                    )
+                except TimeoutException:
+                    pass
+            
+            time.sleep(random.uniform(1, 3))
+            
+            return self.driver.page_source
+            
+        except:
+            return None
+        
+        finally:
+            if self.driver:
+                try:
+                    self.driver.quit()
+                    self.driver = None
+                except:
+                    pass
     
     def search(self, query, page=1):
         url = f"https://nhentai.net/search/?q={query}&page={page}"
@@ -128,134 +180,109 @@ class NHentaiScraper:
         }
     
     def data(self, code):
-        try:
-            url = f"https://nhentai.net/g/{code}/"
-            
-            try:
-                response = self.session.get(url, headers=self.headers, timeout=10)
-                response.raise_for_status()
-                
-                if 'Just a moment' in response.text or 'Cloudflare' in response.text:
-                    raise Exception('Cloudflare detected')
-                
-                soup = BeautifulSoup(response.text, 'html.parser')
-                html_method = 'requests'
-            except:
-                if not self.driver:
-                    self.setup_selenium()
-                    if not self.driver:
-                        raise Exception('Selenium not available')
-                
-                self.driver.get(url)
-                time.sleep(random.uniform(2, 4))
-                
-                page_source = self.driver.page_source
-                if 'Just a moment' in page_source or 'Cloudflare' in page_source:
-                    time.sleep(random.uniform(5, 8))
-                    self.driver.get(url)
-                    time.sleep(random.uniform(3, 5))
-                
-                soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-                html_method = 'selenium'
-            
-            gallery_id = None
-            page_ext_map = {}
-            
-            thumbnails = soup.find_all('div', class_='thumb-container')
-            
-            for thumb in thumbnails:
-                img = thumb.find('img', class_='lazyload')
-                if img:
-                    src = img.get('data-src') or img.get('src', '')
-                    if src:
-                        match = re.search(r'galleries/(\d+)/(\d+)t\.(png|jpg|jpeg|webp)', src)
-                        if match:
-                            gallery_id = match.group(1)
-                            page_num = match.group(2)
-                            ext = match.group(3)
-                            page_ext_map[int(page_num)] = ext
-            
-            if not gallery_id:
-                for img in soup.find_all('img'):
-                    src = img.get('src') or img.get('data-src', '')
-                    if src:
-                        match = re.search(r'galleries/(\d+)/', src)
-                        if match:
-                            gallery_id = match.group(1)
-                            break
-            
-            total_pages = 0
-            script_tag = soup.find('script', string=re.compile(r'window\._gallery'))
-            if script_tag:
-                script_text = script_tag.string
-                pages_match = re.search(r'"num_pages":(\d+)', script_text)
-                if pages_match:
-                    total_pages = int(pages_match.group(1))
-            
-            if total_pages == 0:
-                pages_section = soup.find('section', id='tags')
-                if pages_section:
-                    for tag_container in pages_section.find_all('div', class_='tag-container'):
-                        if 'Pages' in tag_container.get_text():
-                            for tag in tag_container.find_all('a', class_='tag'):
-                                page_num = tag.find('span', class_='name')
-                                if page_num:
-                                    try:
-                                        total_pages = int(page_num.get_text(strip=True))
-                                        break
-                                    except:
-                                        pass
-            
-            image_links = []
-            cover_image = ""
-            
-            if gallery_id and total_pages > 0:
-                for page_num in range(1, total_pages + 1):
-                    ext = page_ext_map.get(page_num, 'jpg')
-                    image_links.append(f"https://i2.nhentai.net/galleries/{gallery_id}/{page_num}.{ext}")
-                
-                if image_links:
-                    cover_image = image_links[0]
-            
-            title_element = soup.find('h1', class_='title')
-            title = ""
-            if title_element:
-                title_parts = []
-                for span in title_element.find_all('span', class_=True):
-                    title_parts.append(span.get_text(strip=True))
-                title = ' '.join(title_parts)
-            
-            tags_dict = {}
-            tags_section = soup.find('section', id='tags')
-            if tags_section:
-                for tag_container in tags_section.find_all('div', class_='tag-container'):
-                    field_name = tag_container.get_text(strip=True).split(':')[0].strip()
-                    tags = []
-                    for tag_link in tag_container.find_all('a', class_='tag'):
-                        tag_name = tag_link.find('span', class_='name')
-                        if tag_name:
-                            tags.append(tag_name.get_text(strip=True))
-                    if tags:
-                        tags_dict[field_name] = tags
-            
-            return {
-                'title': title,
-                'code': int(code),
-                'cover_image': cover_image,
-                'tags': tags_dict,
-                'image_links': image_links,
-                'method': html_method
-            }
-            
-        except Exception as e:
+        url = f"https://nhentai.net/g/{code}/"
+        
+        html_content = self.scrape_with_selenium(url)
+        
+        if not html_content:
             return {
                 'title': '',
                 'code': int(code) if code.isdigit() else 0,
                 'cover_image': '',
                 'tags': {},
                 'image_links': [],
-                'error': str(e)
+                'error': 'Failed to load page'
             }
+        
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        gallery_id = None
+        page_ext_map = {}
+        
+        thumbnails = soup.find_all('div', class_='thumb-container')
+        
+        for thumb in thumbnails:
+            img = thumb.find('img', class_='lazyload')
+            if img:
+                src = img.get('data-src') or img.get('src', '')
+                if src:
+                    match = re.search(r'galleries/(\d+)/(\d+)t\.(png|jpg|jpeg|webp)', src)
+                    if match:
+                        gallery_id = match.group(1)
+                        page_num = match.group(2)
+                        ext = match.group(3)
+                        page_ext_map[int(page_num)] = ext
+        
+        if not gallery_id:
+            for img in soup.find_all('img'):
+                src = img.get('src') or img.get('data-src', '')
+                if src:
+                    match = re.search(r'galleries/(\d+)/', src)
+                    if match:
+                        gallery_id = match.group(1)
+                        break
+        
+        total_pages = 0
+        script_tag = soup.find('script', string=re.compile(r'window\._gallery'))
+        if script_tag:
+            script_text = script_tag.string
+            pages_match = re.search(r'"num_pages":(\d+)', script_text)
+            if pages_match:
+                total_pages = int(pages_match.group(1))
+        
+        if total_pages == 0:
+            pages_section = soup.find('section', id='tags')
+            if pages_section:
+                for tag_container in pages_section.find_all('div', class_='tag-container'):
+                    if 'Pages' in tag_container.get_text():
+                        for tag in tag_container.find_all('a', class_='tag'):
+                            page_num = tag.find('span', class_='name')
+                            if page_num:
+                                try:
+                                    total_pages = int(page_num.get_text(strip=True))
+                                    break
+                                except:
+                                    pass
+        
+        image_links = []
+        cover_image = ""
+        
+        if gallery_id and total_pages > 0:
+            for page_num in range(1, total_pages + 1):
+                ext = page_ext_map.get(page_num, 'jpg')
+                image_links.append(f"https://i2.nhentai.net/galleries/{gallery_id}/{page_num}.{ext}")
+            
+            if image_links:
+                cover_image = image_links[0]
+        
+        title_element = soup.find('h1', class_='title')
+        title = ""
+        if title_element:
+            title_parts = []
+            for span in title_element.find_all('span', class_=True):
+                title_parts.append(span.get_text(strip=True))
+            title = ' '.join(title_parts)
+        
+        tags_dict = {}
+        tags_section = soup.find('section', id='tags')
+        if tags_section:
+            for tag_container in tags_section.find_all('div', class_='tag-container'):
+                field_name = tag_container.get_text(strip=True).split(':')[0].strip()
+                tags = []
+                for tag_link in tag_container.find_all('a', class_='tag'):
+                    tag_name = tag_link.find('span', class_='name')
+                    if tag_name:
+                        tags.append(tag_name.get_text(strip=True))
+                if tags:
+                    tags_dict[field_name] = tags
+        
+        return {
+            'title': title,
+            'code': int(code),
+            'cover_image': cover_image,
+            'tags': tags_dict,
+            'image_links': image_links
+        }
     
     def __del__(self):
         if self.driver:
