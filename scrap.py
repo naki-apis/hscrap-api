@@ -1,6 +1,8 @@
+
 import requests
 from bs4 import BeautifulSoup
 import re
+import math
 
 class NHentaiScraper:
     def __init__(self):
@@ -30,6 +32,8 @@ class NHentaiScraper:
             match = re.search(r'([\d,]+)\s+results', text)
             if match:
                 total_results = int(match.group(1).replace(',', ''))
+        
+        total_pages = math.ceil(total_results / 25)
         
         gallery_divs = soup.find_all('div', class_='gallery')
         
@@ -63,6 +67,7 @@ class NHentaiScraper:
         
         return {
             'total_resultados': total_results,
+            'total_paginas': total_pages,
             'pagina_actual': page,
             'termino_busqueda': query,
             'resultados': results_data
