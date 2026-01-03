@@ -27,6 +27,21 @@ class NHentaiAPI:
             
             results = self.scraper.search(query, page_num)
             return jsonify(results)
+        
+        @self.app.route('/vnh/')
+        def vnh_data():
+            code = request.args.get('code', '')
+            
+            if not code:
+                return jsonify({"error": "Parámetro 'code' requerido"}), 400
+            
+            try:
+                int(code)
+            except:
+                return jsonify({"error": "Código debe ser numérico"}), 400
+            
+            results = self.scraper.data(code)
+            return jsonify(results)
     
     def run(self, host='0.0.0.0', port=5000):
         self.app.run(host=host, port=port, debug=False, use_reloader=False)
