@@ -45,18 +45,30 @@ class NHentaiScraper:
         
         if chrome_path.exists():
             chrome_options.binary_location = str(chrome_path)
+            print(f"Chrome encontrado en: {chrome_path}")
+        else:
+            print(f"Chrome NO encontrado en: {chrome_path}")
         
         try:
             if chromedriver_path.exists():
+                print(f"Chromedriver encontrado en: {chromedriver_path}")
                 service = Service(executable_path=str(chromedriver_path))
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
             else:
+                print(f"Chromedriver NO encontrado en: {chromedriver_path}")
+                print("Intentando sin ruta específica...")
                 self.driver = webdriver.Chrome(options=chrome_options)
             
             self.driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
                 'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined});'
             })
-        except:
+            print("Selenium inicializado correctamente")
+            
+        except Exception as e:
+            print(f"Error inicializando Selenium: {e}")
+            print(f"¿Existe selenium_dir? {selenium_dir.exists()}")
+            print(f"¿Existe chrome? {chrome_path.exists()}")
+            print(f"¿Existe chromedriver? {chromedriver_path.exists()}")
             self.driver = None
     
     def search(self, query, page=1):
