@@ -3,10 +3,17 @@ import requests
 from pathlib import Path
 
 def download_file(url, filename):
-    response = requests.get(url, stream=True)
-    with open(filename, 'wb') as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
+    try:
+        response = requests.get(url, stream=True, timeout=30)
+        response.raise_for_status()
+        with open(filename, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        return True
+    except Exception as e:
+        print(f"Error descargando {filename}: {e}")
+        return False
 
 def main():
     base_dir = Path(__file__).parent.absolute()
@@ -19,18 +26,39 @@ def main():
     chrome_path = selenium_dir / "chrome"
     chromedriver_path = selenium_dir / "chromedriver"
     
-    print("Descargando Chrome...")
-    download_file(chrome_url, chrome_path)
+    chrome_success = True
+    chromedriver_success = True
     
-    print("Descargando Chromedriver...")
-    download_file(chromedriver_url, chromedriver_path)
+    if not chrome_path.exists():
+        print("Descargando Chrome...")
+        chrome_success = download_file(chrome_url, chrome_path)
+    else:
+        print("Chrome ya existe, omitiendo descarga")
     
-    os.chmod(chrome_path, 0o755)
-    os.chmod(chromedriver_path, 0o755)
+    if not chromedriver_path.exists():
+        print("Descargando Chromedriver...")
+        chromedriver_success = download_file(chromedriver_url, chromedriver_path)
+    else:
+        print("Chromedriver ya existe, omitiendo descarga")
     
-    print("Permisos establecidos")
-    print("Instalando dependencias...")
-    os.system("pip install Flask==2.3.3 selenium==4.15.0 requests==2.31.0")
+    if chrome_success and os.path.exists(chrome_path):
+        os.chmod(chrome_path, 0o755)
+        print("✓ Permisos establecidos para Chrome")
+    else:
+        print("✗ Error con Chrome")
+    
+    if chromedriver_success and os.path.exists(chromedriver_path):
+        os.chmod(chromedriver_path, 0o755)
+        print("✓ Permisos establecidos para Chromedriver")
+    else:
+        print("✗ Error con Chromedriver")
+    
+    if chrome_success and chromedriver_success:
+        print("Instalando dependencias...")
+        os.system("pip install Flask==2.3.3 selenium==4.15.0 requests==2.31.0")
+        print("✓ Todo listo")
+    else:
+        print("✗ Algunos archivos no se descargaron correctamente")
 
 if __name__ == "__main__":
     main()
