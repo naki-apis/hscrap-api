@@ -272,6 +272,136 @@ class NHentaiScraper:
                     self.driver = None
                 except:
                     pass
+
+class SHentaiScraper:
+    def __init__(self):
+        self.session = requests.Session()
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3',
+            'Accept-Encoding': 'gzip, deflate',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+    
+    def search(self, query, page=1):
+        url = f"https://es.3hentai.net/search?q={query}&page={page}"
+        
+        response = self.session.get(url, headers=self.headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        results_data = []
+        
+        total_results_text = soup.find('div', class_='search-result-nb-result')
+        total_results = 0
+        if total_results_text:
+            text = total_results_text.get_text(strip=True)
+            match = re.search(r'([\d\s,]+)\s+results', text)
+            if match:
+                total_results = int(match.group(1).replace(',', '').replace(' ', ''))
+        
+        total_pages_elem = soup.find('a', class_='page-link', href=lambda x: x and f'page={total_results//24+1}' in x)
+        if total_pages_elem:
+            try:
+                total_pages = int(total_pages_elem.text)
+            except:
+                total_pages = math.ceil(total_results / 24)
+        else:
+            total_pages = math.ceil(total_results / 24)
+        
+        doujin_cols = soup.find_all('div', class_='doujin-col')
+        
+        for col in doujin_cols:
+            link_element = col.find('a', class_='cover')
+            if not link_element:
+                continue
+            
+            href = link_element.get('href', '')
+            code = ''
+            if href and '/d/' in href:
+                code_match = re.search(r'/d/(\d+)', href)
+                if code_match:
+                    code = code_match.group(1)
+            
+            img_element = link_element.find('img')
+            thumbnail = ''
+            if img_element:
+                thumbnail = img_element.get('data-src', '')
+                if not thumbnail:
+                    thumbnail = img_element.get('src', '')
+            
+            title_div = link_element.find('div', class_='title')
+            name = title_div.get_text(strip=True) if title_div else ''
+            
+            if code:
+                image_links = [f"https://s1.3hentai.xyz/d{code[0:3]}{code[3:]}/1.jpg"]
+                results_data.append({
+                    'code': code,
+                    'image_links': image_links,
+                    'name': name
+                })
+        
+        return {
+            'success': True,
+            'total_results': total_results,
+            'total_pages': total_pages,
+            'page': page,
+            'search_term': query,
+            'results': results_data
+        }
+    
+    def data(self, code):
+        url = f"https://es.3hentai.net/d/{code}"
+        
+        response = self.session.get(url, headers=self.headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        title = soup.title.string.strip() if soup.title and soup.title.string else ''
+        
+        gallery = soup.find("div", id="main-content")
+        thumbs = gallery.find("div", id="thumbnail-gallery") if gallery else None
+        thumb_divs = thumbs.find_all("div", class_="single-thumb") if thumbs else []
+        total_pages = len(thumb_divs)
+        
+        tags_dict = {}
+        tag_containers = soup.find_all("div", class_="tag-container")
+        for container in tag_containers:
+            field_name = container.get_text(strip=True).split(':')[0].strip()
+            tags = []
+            for tag_link in container.find_all("a", class_="name"):
+                tags.append(tag_link.get_text(strip=True))
+            if tags:
+                tags_dict[field_name] = tags
+        
+        image_links = []
+        cover_image = ""
+        
+        if thumb_divs:
+            for div in thumb_divs:
+                img_tag = div.find("img")
+                if img_tag:
+                    src_url = img_tag.get("data-src") or img_tag.get("src")
+                    if src_url:
+                        full_img_url = re.sub(r't(?=\.\w{3,4}$)', '', src_url)
+                        image_links.append(full_img_url)
+            
+            if image_links:
+                cover_image = image_links[0]
+        
+        result = {
+            'success': True,
+            'title': title,
+            'clean_title': title.replace(' - 3Hentai', '').strip(),
+            'code': code,
+            'cover_image': cover_image,
+            'tags': tags_dict,
+            'image_links': image_links,
+            'total_pages': total_pages
+        }
+        
+        return result
     
     def __del__(self):
         if self.driver:
