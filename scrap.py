@@ -145,13 +145,13 @@ class NHentaiScraper:
                     time.sleep(5)
                     continue
                 
-                if len(page_source) > 1000:
+                if "gallery" in page_source.lower() or "cover" in page_source.lower():
                     html_content = page_source
                     print(f"HTML obtenido: {len(html_content)} caracteres")
                     break
             
-            if not html_content:
-                raise Exception("No se pudo obtener contenido HTML después de varios intentos")
+            if not html_content or len(html_content) < 100:
+                raise Exception("El contenido HTML parece estar vacío o es muy corto")
             
             soup = BeautifulSoup(html_content, 'html.parser')
             
@@ -177,7 +177,7 @@ class NHentaiScraper:
                         tags_dict[field_name] = tags
             
             gallery_id = None
-            pattern = re.compile(r'//t[1249]\.nhentai\.net/galleries/(\d+)/(\d+)t\.(webp|jpg|png|jpeg)')
+            pattern = re.compile(r'//t[1249]\.nhentai\.net/galleries/(\d+)/(\d+)t\.(webp|jpg|png)')
             
             for img in soup.find_all('img'):
                 src = img.get('src') or img.get('data-src', '')
@@ -191,7 +191,7 @@ class NHentaiScraper:
             cover_image = ""
             
             if gallery_id:
-                print(f"ID de galería encontrado: {gallery_id}")
+                print(f"ID real de la galería encontrado: {gallery_id}")
                 
                 total_pages_from_tags = 0
                 if 'Pages' in tags_dict and tags_dict['Pages']:
@@ -218,7 +218,7 @@ class NHentaiScraper:
                 if total_pages_from_tags == 0 and found_thumbnails:
                     total_pages_from_tags = found_thumbnails[-1]['page_num']
                 
-                print(f"Páginas totales: {total_pages_from_tags}, Miniaturas: {len(found_thumbnails)}")
+                print(f"Páginas en tags: {total_pages_from_tags}, Miniaturas encontradas: {len(found_thumbnails)}")
                 
                 if total_pages_from_tags > 0:
                     extensions_count = {}
@@ -236,10 +236,13 @@ class NHentaiScraper:
                         ext = page_ext_map.get(page_num, default_ext)
                         image_link = f"https://i2.nhentai.net/galleries/{gallery_id}/{page_num}.{ext}"
                         image_links.append(image_link)
+                    
+                    print(f"Lista de imágenes autocompletada: {len(image_links)} páginas")
                 else:
                     for thumb in found_thumbnails:
                         image_link = f"https://i2.nhentai.net/galleries/{gallery_id}/{thumb['page_num']}.{thumb['ext']}"
-                        image_links.append(image_link)
+                        image_links.append(image_links)
+                    print(f"Usando solo miniaturas encontradas: {len(image_links)} páginas")
                 
                 if image_links:
                     cover_image = image_links[0]
@@ -358,43 +361,36 @@ class SHentaiScraper:
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            title_element = soup.find('h1')
-            title = title_element.text.strip() if title_element else ""
-            clean_title = title.replace(' - 3Hentai', '').strip()
+            title_element = soup.title
+            title = title_element.string.strip() if title_element and title_element.string else "Sin título"
             
             tags_dict = {}
             tag_containers = soup.find_all("div", class_="tag-container")
-            
             for container in tag_containers:
-                field_name_element = container.find('span', class_='name')
-                if field_name_element:
-                    field_name = field_name_element.text.strip()
-                    tags = []
-                    tag_links = container.find_all('a', class_='tag')
-                    
-                    for tag_link in tag_links:
-                        tag_name = tag_link.find('span', class_='name')
-                        if tag_name:
-                            tags.append(tag_name.text.strip())
-                    
-                    if tags:
-                        tags_dict[field_name] = tags
+                field_name = container.get_text(strip=True).split(':')[0].strip()
+                tags = []
+                for tag_link in container.find_all("a", class_="name"):
+                    tags.append(tag_link.get_text(strip=True))
+                if tags:
+                    tags_dict[field_name] = tags
+            
+            gallery = soup.find("div", id="main-content")
+            thumbs = gallery.find("div", id="thumbnail-gallery") if gallery else None
+            thumb_divs = thumbs.find_all("div", class_="single-thumb") if thumbs else []
             
             image_links = []
-            thumb_links = soup.find_all("a", class_="gallerythumb")
-            
-            for thumb in thumb_links:
-                img_tag = thumb.find('img')
+            for div in thumb_divs:
+                img_tag = div.find("img")
                 if img_tag:
-                    src = img_tag.get('src') or img_tag.get('data-src', '')
-                    if src:
-                        clean_src = src.replace('t.jpg', '.jpg').replace('t.png', '.png').replace('t.webp', '.webp')
-                        image_links.append(clean_src)
+                    src_url = img_tag.get("data-src") or img_tag.get("src")
+                    if src_url:
+                        full_img_url = re.sub(r't(?=\.\w{3,4}$)', '', src_url)
+                        image_links.append(full_img_url)
             
             cover_image = image_links[0] if image_links else ""
             
             return {
-                'title': clean_title,
+                'title': title,
                 'code': code,
                 'cover_image': cover_image,
                 'tags': tags_dict,
