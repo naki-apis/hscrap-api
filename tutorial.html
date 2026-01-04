@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hentai API Documentation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1, h2 {
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        .code-block {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            font-family: monospace;
+            overflow-x: auto;
+        }
+        .endpoint {
+            margin: 25px 0;
+            padding: 15px;
+            border-left: 4px solid #4CAF50;
+            background-color: #f9f9f9;
+        }
+        .lang-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .lang-btn:hover {
+            background-color: #45a049;
+        }
+        .response {
+            background-color: #e8f4f8;
+            border-left: 4px solid #2196F3;
+        }
+    </style>
+</head>
+<body>
+    <button class="lang-btn" onclick="toggleLanguage()">Español</button>
+
+    <div id="english-content">
+        <h1>Hentai API Documentation</h1>
+        <p>This API provides access to scrape content from nhentai and 3hentai websites.</p>
+
+        <h2>Available Endpoints</h2>
+
+        <div class="endpoint">
+            <h3>1. Search nhentai</h3>
+            <p><strong>Endpoint:</strong> GET /snh/</p>
+            <p><strong>Parameters:</strong></p>
+            <ul>
+                <li><code>q</code> (required): Search query</li>
+                <li><code>p</code> (optional): Page number (default: 1)</li>
+            </ul>
+            <div class="code-block">
+                curl -X GET "http://localhost:5000/snh/?q=dragonball&p=1"
+            </div>
+            <div class="code-block response">
+                {
+                    "results": [...],
+                    "total_pages": 5,
+                    "current_page": 1
+                }
+            </div>
+        </div>
+
+        <div class="endpoint">
+            <h3>2. Get nhentai data</h3>
+            <p><strong>Endpoint:</strong> GET /vnh/</p>
+            <p><strong>Parameters:</strong></p>
+            <ul>
+                <li><code>code</code> (required): Gallery numeric code</li>
+            </ul>
+            <div class="code-block">
+                curl -X GET "http://localhost:5000/vnh/?code=177013"
+            </div>
+        </div>
+
+        <div class="endpoint">
+            <h3>3. Search 3hentai</h3>
+            <p><strong>Endpoint:</strong> GET /s3h/</p>
+            <p><strong>Parameters:</strong></p>
+            <ul>
+                <li><code>q</code> (required): Search query</li>
+                <li><code>p</code> (optional): Page number (default: 1)</li>
+            </ul>
+            <div class="code-block">
+                curl -X GET "http://localhost:5000/s3h/?q=artist:shindol&p=1"
+            </div>
+        </div>
+
+        <div class="endpoint">
+            <h3>4. Get 3hentai data</h3>
+            <p><strong>Endpoint:</strong> GET /v3h/</p>
+            <p><strong>Parameters:</strong></p>
+            <ul>
+                <li><code>code</code> (required): Gallery code (can be alphanumeric)</li>
+            </ul>
+            <div class="code-block">
+                curl -X GET "http://localhost:5000/v3h/?code=abc123"
+            </div>
+        </div>
+
+        <h2>Python Requests Example</h2>
+        <div class="code-block">
+import requests
+
+response = requests.get("http://localhost:5000/snh/", params={
+    "q": "naruto",
+    "p": 1
+})
+
+data = response.json()
+print(data)
+        </div>
+    </div>
+
+    <div id="spanish-content" style="display: none;">
+        <h1>Documentación de la API Hentai</h1>
+        <p>Esta API proporciona acceso para scrapear contenido de los sitios nhentai y 3hentai.</p>
+
+        <h2>Endpoints Disponibles</h2>
+
+        <div class="endpoint">
+            <h3>1. Buscar en nhentai</h3>
+            <p><strong>Endpoint:</strong> GET /snh/</p>
+            <p><strong>Parámetros:</strong></p>
+            <ul>
+                <li><code>q</code> (requerido): Consulta de búsqueda</li>
+                <li><code>p</code> (opcional): Número de página (por defecto: 1)</li>
+            </ul>
+            <div class="code-block">
+                curl -X GET "http://localhost:5000/snh/?q=dragonball&p=1"
+            </div>
+            <div class="code-block response">
+                {
+                    "results": [...],
+                    "total_pages": 5,
+                    "current_page": 1
+                }
+            </div>
+        </div>
+
+        <div class="endpoint">
+            <h3>2. Obtener datos de nhentai</h3>
+            <p><strong>Endpoint:</strong> GET /vnh/</p>
+            <p><strong>Parámetros:</strong></p>
+            <ul>
+                <li><code>code</code> (requerido): Código numérico de la galería</li>
+            </ul>
+            <div class="code-block">
+                curl -X GET "http://localhost:5000/vnh/?code=177013"
+            </div>
+        </div>
+
+        <div class="endpoint">
+            <h3>3. Buscar en 3hentai</h3>
+            <p><strong>Endpoint:</strong> GET /s3h/</p>
+            <p><strong>Parámetros:</strong></p>
+            <ul>
+                <li><code>q</code> (requerido): Consulta de búsqueda</li>
+                <li><code>p</code> (opcional): Número de página (por defecto: 1)</li>
+            </ul>
+            <div class="code-block">
+                curl -X GET "http://localhost:5000/s3h/?q=artist:shindol&p=1"
+            </div>
+        </div>
+
+        <div class="endpoint">
+            <h3>4. Obtener datos de 3hentai</h3>
+            <p><strong>Endpoint:</strong> GET /v3h/</p>
+            <p><strong>Parámetros:</strong></p>
+            <ul>
+                <li><code>code</code> (requerido): Código de la galería (puede ser alfanumérico)</li>
+            </ul>
+            <div class="code-block">
+                curl -X GET "http://localhost:5000/v3h/?code=abc123"
+            </div>
+        </div>
+
+        <h2>Ejemplo con Python Requests</h2>
+        <div class="code-block">
+import requests
+
+response = requests.get("http://localhost:5000/snh/", params={
+    "q": "naruto",
+    "p": 1
+})
+
+data = response.json()
+print(data)
+        </div>
+    </div>
+
+    <script>
+        let currentLang = 'en';
+        
+        function toggleLanguage() {
+            const enContent = document.getElementById('english-content');
+            const esContent = document.getElementById('spanish-content');
+            const btn = document.querySelector('.lang-btn');
+            
+            if (currentLang === 'en') {
+                enContent.style.display = 'none';
+                esContent.style.display = 'block';
+                btn.textContent = 'English';
+                currentLang = 'es';
+            } else {
+                enContent.style.display = 'block';
+                esContent.style.display = 'none';
+                btn.textContent = 'Español';
+                currentLang = 'en';
+            }
+        }
+    </script>
+</body>
+  </html>
