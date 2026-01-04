@@ -1,16 +1,17 @@
 from flask import Flask, jsonify, request
-from scrap import NHentaiScraper
+from scrap import NHentaiScraper, SHentaiScraper
 
-class NHentaiAPI:
+class HentaiAPI:
     def __init__(self):
         self.app = Flask(__name__)
-        self.scraper = NHentaiScraper()
+        self.nhentai_scraper = NHentaiScraper()
+        self.shentai_scraper = SHentaiScraper()
         self.setup_routes()
     
     def setup_routes(self):
         @self.app.route('/')
         def index():
-            return "API de scraping nhentai"
+            return "API de scraping nhentai y 3hentai"
         
         @self.app.route('/snh/')
         def snh_search():
@@ -25,7 +26,7 @@ class NHentaiAPI:
             except:
                 page_num = 1
             
-            results = self.scraper.search(query, page_num)
+            results = self.nhentai_scraper.search(query, page_num)
             return jsonify(results)
         
         @self.app.route('/vnh/')
@@ -40,12 +41,38 @@ class NHentaiAPI:
             except:
                 return jsonify({"error": "Código debe ser numérico"}), 400
             
-            results = self.scraper.data(code)
+            results = self.nhentai_scraper.data(code)
+            return jsonify(results)
+        
+        @self.app.route('/s3h/')
+        def s3h_search():
+            query = request.args.get('q', '')
+            page = request.args.get('p', '1')
+            
+            if not query:
+                return jsonify({"error": "Parámetro 'q' requerido"}), 400
+            
+            try:
+                page_num = int(page)
+            except:
+                page_num = 1
+            
+            results = self.shentai_scraper.search(query, page_num)
+            return jsonify(results)
+        
+        @self.app.route('/v3h/')
+        def v3h_data():
+            code = request.args.get('code', '')
+            
+            if not code:
+                return jsonify({"error": "Parámetro 'code' requerido"}), 400
+            
+            results = self.shentai_scraper.data(code)
             return jsonify(results)
     
     def run(self, host='0.0.0.0', port=5000):
         self.app.run(host=host, port=port, debug=False, use_reloader=False)
 
 if __name__ == '__main__':
-    api = NHentaiAPI()
+    api = HentaiAPI()
     api.run()
