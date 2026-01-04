@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from scrap import NHentaiScraper, SHentaiScraper
 
 class HentaiAPI:
@@ -11,7 +11,7 @@ class HentaiAPI:
     def setup_routes(self):
         @self.app.route('/')
         def index():
-            return "API de scraping nhentai y 3hentai"
+            return send_file('tutorial.html')
         
         @self.app.route('/snh/')
         def snh_search():
