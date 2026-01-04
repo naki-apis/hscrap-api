@@ -280,7 +280,7 @@ class SHentaiScraper:
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Language': 'es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3',
             'Accept-Encoding': 'gzip, deflate',
             'DNT': '1',
             'Connection': 'keep-alive',
@@ -288,149 +288,128 @@ class SHentaiScraper:
         }
     
     def search(self, query, page=1):
-        url = f"https://3hentai.net/search?q={query}&page={page}"
+        encoded_search = requests.utils.quote(query)
+        url = f"https://es.3hentai.net/search?q={encoded_search}&page={page}"
         
-        response = self.session.get(url, headers=self.headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        results_data = []
-        
-        total_results_text = soup.find('div', class_='search-result-nb-result')
-        total_results = 0
-        
-        if total_results_text:
-            text = total_results_text.get_text(strip=True)
-            match = re.search(r'([\d\s,]+)\s+(?:results|resultados)', text, re.IGNORECASE)
-            if match:
-                numbers = match.group(1).replace(',', '').replace(' ', '')
-                if numbers.isdigit():
-                    total_results = int(numbers)
-        
-        if total_results == 0:
-            gallery_elements = soup.find_all('div', class_='gallery')
-            if gallery_elements:
-                total_results = len(gallery_elements) + ((page - 1) * 25)
-        
-        total_pages = math.ceil(total_results / 25) if total_results > 0 else 0
-        
-        gallery_divs = soup.find_all('div', class_='gallery')
-        
-        for gallery in gallery_divs:
-            link_element = gallery.find('a', class_='cover')
-            if not link_element:
-                continue
+        try:
+            response = self.session.get(url, headers=self.headers, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
             
-            href = link_element.get('href', '')
-            code = ''
-            if href and '/d/' in href:
-                code_match = re.search(r'/d/(\d+)', href)
-                if code_match:
-                    code = code_match.group(1)
+            total_results_text = soup.find('div', class_='search-result-nb-result')
+            total_results = 0
+            if total_results_text:
+                total_text = total_results_text.text.strip()
+                total_results = int(total_text.replace(' resultados', '').replace(' ', '').replace('\xa0', ''))
             
-            img_element = link_element.find('img')
-            thumbnail = ''
-            if img_element:
-                thumbnail = img_element.get('data-src', '')
-                if not thumbnail:
-                    thumbnail = img_element.get('src', '')
+            total_pages = math.ceil(total_results / 25)
             
-            title_div = link_element.find('div', class_='title')
-            name = title_div.get_text(strip=True) if title_div else ''
+            doujin_cols = soup.find_all('div', class_='doujin-col')
+            results_data = []
             
-            if code:
-                results_data.append({
-                    'nombre': name,
-                    'miniatura': thumbnail,
-                    'codigo': code
-                })
-        
-        return {
-            'total_resultados': total_results,
-            'total_paginas': total_pages,
-            'pagina_actual': page,
-            'termino_busqueda': query,
-            'resultados': results_data
-        }
+            for col in doujin_cols[:25]:
+                doujin = col.find('div', class_='doujin')
+                if doujin:
+                    cover = doujin.find('a', class_='cover')
+                    if cover:
+                        title_div = cover.find('div', class_='title')
+                        titulo = title_div.text.strip() if title_div else "Título no disponible"
+                        
+                        img = cover.find('img')
+                        imagen_url = ""
+                        if img and 'data-src' in img.attrs:
+                            imagen_url = img['data-src'].replace('thumb.jpg', '1.jpg')
+                        elif img and 'src' in img.attrs:
+                            imagen_url = img['src'].replace('thumb.jpg', '1.jpg')
+                        
+                        href = cover.get('href', '')
+                        codigo_match = re.search(r'/d/(\d+)', href)
+                        codigo = codigo_match.group(1) if codigo_match else ""
+                        
+                        results_data.append({
+                            'nombre': titulo,
+                            'miniatura': imagen_url,
+                            'codigo': codigo
+                        })
+            
+            return {
+                'total_resultados': total_results,
+                'total_paginas': total_pages,
+                'pagina_actual': page,
+                'termino_busqueda': query,
+                'resultados': results_data
+            }
+            
+        except Exception as e:
+            return {
+                'total_resultados': 0,
+                'total_paginas': 0,
+                'pagina_actual': page,
+                'termino_busqueda': query,
+                'resultados': [],
+                'error': str(e)
+            }
     
     def data(self, code):
-        url = f"https://3hentai.net/d/{code}"
+        url = f"https://es.3hentai.net/d/{code}"
         
-        response = self.session.get(url, headers=self.headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        title_element = soup.find('h1', class_='title')
-        title = title_element.get_text(strip=True) if title_element else ''
-        
-        tags_dict = {}
-        tag_containers = soup.find_all("div", class_="tag-container")
-        
-        for container in tag_containers:
-            field_name_element = container.find('span', class_='name')
-            if field_name_element:
-                field_name = field_name_element.get_text(strip=True)
-                tags = []
-                tag_links = container.find_all('a', class_='tag')
-                
-                for tag_link in tag_links:
-                    tag_name = tag_link.find('span', class_='name')
-                    if tag_name:
-                        tags.append(tag_name.get_text(strip=True))
-                
-                if tags:
-                    tags_dict[field_name] = tags
-        
-        gallery_id = None
-        image_links = []
-        cover_image = ""
-        
-        pattern = re.compile(r'/galleries/(\d+)/(\d+)t\.(jpg|jpeg|png|webp)')
-        
-        for img in soup.find_all('img'):
-            src = img.get('src') or img.get('data-src', '')
-            if src:
-                match = pattern.search(src)
-                if match:
-                    gallery_id = match.group(1)
-                    break
-        
-        if gallery_id:
-            thumb_divs = soup.find_all("div", class_="thumb-container")
-            found_pages = []
+        try:
+            response = self.session.get(url, headers=self.headers, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
             
-            for thumb in thumb_divs:
+            title_element = soup.find('h1')
+            title = title_element.text.strip() if title_element else ""
+            clean_title = title.replace(' - 3Hentai', '').strip()
+            
+            tags_dict = {}
+            tag_containers = soup.find_all("div", class_="tag-container")
+            
+            for container in tag_containers:
+                field_name_element = container.find('span', class_='name')
+                if field_name_element:
+                    field_name = field_name_element.text.strip()
+                    tags = []
+                    tag_links = container.find_all('a', class_='tag')
+                    
+                    for tag_link in tag_links:
+                        tag_name = tag_link.find('span', class_='name')
+                        if tag_name:
+                            tags.append(tag_name.text.strip())
+                    
+                    if tags:
+                        tags_dict[field_name] = tags
+            
+            image_links = []
+            thumb_links = soup.find_all("a", class_="gallerythumb")
+            
+            for thumb in thumb_links:
                 img_tag = thumb.find('img')
                 if img_tag:
                     src = img_tag.get('src') or img_tag.get('data-src', '')
                     if src:
-                        match = pattern.search(src)
-                        if match:
-                            page_num = match.group(2)
-                            ext = match.group(3)
-                            found_pages.append({
-                                'page': int(page_num),
-                                'ext': ext
-                            })
+                        clean_src = src.replace('t.jpg', '.jpg').replace('t.png', '.png').replace('t.webp', '.webp')
+                        image_links.append(clean_src)
             
-            if found_pages:
-                found_pages.sort(key=lambda x: x['page'])
-                max_page = found_pages[-1]['page']
-                
-                for page_num in range(1, max_page + 1):
-                    ext_map = {item['page']: item['ext'] for item in found_pages}
-                    ext = ext_map.get(page_num, 'jpg')
-                    image_link = f"https://i.3hentai.net/galleries/{gallery_id}/{page_num}.{ext}"
-                    image_links.append(image_link)
-                
-                if image_links:
-                    cover_image = image_links[0]
-        
-        return {
-            'title': title,
-            'code': code,
-            'cover_image': cover_image,
-            'tags': tags_dict,
-            'image_links': image_links
-        }
+            cover_image = image_links[0] if image_links else ""
+            
+            return {
+                'title': clean_title,
+                'code': code,
+                'cover_image': cover_image,
+                'tags': tags_dict,
+                'image_links': image_links
+            }
+            
+        except Exception as e:
+            return {
+                'title': '',
+                'code': code,
+                'cover_image': '',
+                'tags': {},
+                'image_links': [],
+                'error': str(e)
+            }
     
     def __del__(self):
         if self.driver:
