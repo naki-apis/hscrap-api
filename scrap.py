@@ -197,8 +197,9 @@ class HitomiScraper:
             if not self._create_driver():
                 return None
             
-            url = f"https://hitomi.la/reader/{g}.html#{p}"
-            self.driver.get(url)
+            base_url = f"https://hitomi.la/reader/{g}.html"
+            current_url = f"{base_url}#{p}"
+            self.driver.get(current_url)
             
             time.sleep(2)
             
@@ -302,13 +303,42 @@ class HitomiScraper:
                         zip_file.writestr(f"{page_name}.png", img_buffer.getvalue())
                         
                         if current_page < f:
-                            try:
-                                next_button = self.driver.find_element(By.ID, "nextPanel")
-                                next_button.click()
-                                time.sleep(0.3)
-                            except Exception as e:
-                                print(f"No se pudo hacer click en Next: {str(e)}")
-                                break
+                            max_attempts = 3
+                            for attempt in range(max_attempts):
+                                try:
+                                    previous_url = self.driver.current_url
+                                    next_button = self.driver.find_element(By.ID, "nextPanel")
+                                    next_button.click()
+                                    time.sleep(0.5)
+                                    
+                                    new_url = self.driver.current_url
+                                    
+                                    if new_url == previous_url:
+                                        continue
+                                    
+                                    if not new_url.startswith(base_url):
+                                        self.driver.back()
+                                        time.sleep(0.5)
+                                        continue
+                                    
+                                    try:
+                                        hash_part = new_url.split('#')[1]
+                                        new_page = int(hash_part)
+                                        if new_page == current_page + 1:
+                                            break
+                                        else:
+                                            self.driver.back()
+                                            time.sleep(0.5)
+                                    except:
+                                        self.driver.back()
+                                        time.sleep(0.5)
+                                    
+                                except Exception as btn_e:
+                                    if attempt == max_attempts - 1:
+                                        raise btn_e
+                                    time.sleep(1)
+                            
+                            time.sleep(0.3)
                         
                         current_page += 1
                         
