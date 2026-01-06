@@ -26,56 +26,67 @@ class HitomiScraper:
     
     def _create_driver(self):
         try:
-            base_dir = Path(__file__).parent.absolute()
-            selenium_dir = base_dir / "selenium"
-            
-            chrome_path = selenium_dir / "chrome"
-            chromedriver_path = selenium_dir / "chromedriver"
-            
             chrome_options = Options()
-            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--headless')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
             chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             
-            if chrome_path.exists():
-                chrome_options.binary_location = str(chrome_path)
-            
-            if chromedriver_path.exists():
-                service = Service(executable_path=str(chromedriver_path))
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-            else:
-                driver = webdriver.Chrome(options=chrome_options)
-            
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            return driver
+            self.driver = webdriver.Chrome(options=chrome_options)
+            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            return True
         except Exception as e:
-            print(f"Error creando driver: {e}")
-            return None
+            try:
+                base_dir = Path(__file__).parent.absolute()
+                selenium_dir = base_dir / "selenium"
+                
+                chrome_path = selenium_dir / "chrome"
+                chromedriver_path = selenium_dir / "chromedriver"
+                
+                if chrome_path.exists():
+                    chrome_options.binary_location = str(chrome_path)
+                
+                if chromedriver_path.exists():
+                    service = Service(executable_path=str(chromedriver_path))
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                else:
+                    self.driver = webdriver.Chrome(options=chrome_options)
+                
+                self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                return True
+            except Exception as e2:
+                return False
     
     def page(self, g, p):
-        url = f"https://hitomi.la/reader/{g}.html#{p}"
-        
-        driver = self._create_driver()
-        if not driver:
-            return json.dumps({
-                "title": "",
-                "actual_page": str(p),
-                "total_pages": "0",
-                "imagenes": {},
-                "error": "No se pudo crear el driver"
-            })
-        
         try:
-            driver.get(url)
-            time.sleep(2)
+            if not self._create_driver():
+                return json.dumps({
+                    "title": "",
+                    "actual_page": str(p),
+                    "total_pages": "0",
+                    "imagenes": {},
+                    "error": "No se pudo crear el driver"
+                })
             
-            page_source = driver.page_source
-            soup = BeautifulSoup(page_source, 'html.parser')
+            url = f"https://hitomi.la/reader/{g}.html#{p}"
+            self.driver.get(url)
+            
+            max_attempts = 3
+            html_content = ""
+            
+            for attempt in range(max_attempts):
+                wait_time = 2 + attempt * 2
+                time.sleep(wait_time)
+                page_source = self.driver.page_source
+                if page_source and len(page_source) > 100:
+                    html_content = page_source
+                    break
+            
+            soup = BeautifulSoup(html_content, 'html.parser')
             
             title = soup.find('title').text if soup.find('title') else ""
             
@@ -94,8 +105,9 @@ class HitomiScraper:
                 if img_element and 'src' in img_element.attrs:
                     img_url = img_element['src']
                     try:
-                        response = requests.get(img_url, timeout=10)
+                        response = requests.get(img_url, headers=self.headers, timeout=10)
                         if response.status_code == 200:
+                            import base64
                             img_base64 = base64.b64encode(response.content).decode('utf-8')
                             images_data[f"img_{idx}"] = img_base64
                     except:
@@ -118,12 +130,12 @@ class HitomiScraper:
                 "imagenes": {},
                 "error": str(e)
             })
-        
         finally:
-            try:
-                driver.quit()
-            except:
-                pass
+            if self.driver:
+                try:
+                    self.driver.quit()
+                except:
+                    pass
 
 class NHentaiScraper:
     def __init__(self):
