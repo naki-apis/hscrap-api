@@ -43,7 +43,7 @@ class HitomiScraper:
             
             self.driver = webdriver.Chrome(options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            return True
+            return driver
         except Exception as e:
             print(f"Error creando driver básico: {e}")
             
@@ -66,7 +66,7 @@ class HitomiScraper:
                 
                 self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 print("Driver creado con rutas personalizadas")
-                return True
+                return driver
             except Exception as e2:
                 print(f"Error también con rutas personalizadas: {e2}")
                 return False
