@@ -32,34 +32,44 @@ class HitomiScraper:
     def _create_driver(self):
         try:
             chrome_options = Options()
-            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--headless')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
             chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             
-            base_dir = Path(__file__).parent.absolute()
-            selenium_dir = base_dir / "selenium"
-            
-            chrome_path = selenium_dir / "chrome"
-            chromedriver_path = selenium_dir / "chromedriver"
-            
-            if chrome_path.exists():
-                chrome_options.binary_location = str(chrome_path)
-            
-            if chromedriver_path.exists():
-                service = Service(executable_path=str(chromedriver_path))
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-            else:
-                driver = webdriver.Chrome(options=chrome_options)
-            
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            return driver
+            self.driver = webdriver.Chrome(options=chrome_options)
+            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            return True
         except Exception as e:
-            return None
+            print(f"Error creando driver básico: {e}")
+            
+            try:
+                base_dir = Path(__file__).parent.absolute()
+                selenium_dir = base_dir / "selenium"
+                
+                chrome_path = selenium_dir / "chrome"
+                chromedriver_path = selenium_dir / "chromedriver"
+                
+                if chrome_path.exists():
+                    chrome_options.binary_location = str(chrome_path)
+                    print(f"Usando Chrome en: {chrome_path}")
+                
+                if chromedriver_path.exists():
+                    service = Service(executable_path=str(chromedriver_path))
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                else:
+                    self.driver = webdriver.Chrome(options=chrome_options)
+                
+                self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                print("Driver creado con rutas personalizadas")
+                return True
+            except Exception as e2:
+                print(f"Error también con rutas personalizadas: {e2}")
+                return False
     
     def esperar_imagen_cargada(self, driver, timeout=3):
         try:
