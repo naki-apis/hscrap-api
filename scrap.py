@@ -82,15 +82,36 @@ class HitomiScraper:
             url = f"https://hitomi.la/reader/{g}.html#{p}"
             self.driver.get(url)
             
-            time.sleep(random.uniform(0.5, 1))
+            min_sleep = 0.5
+            max_sleep = 1.0
+            while True:
+                time.sleep(random.uniform(min_sleep, max_sleep))
+                
+                screenshot = self.driver.get_screenshot_as_png()
+                img = Image.open(io.BytesIO(screenshot))
+                
+                img_crop = img.crop((0, 41, img.size[0], img.size[1]))
+                img_array = img_crop.load()
+                
+                is_all_dark = True
+                for x in range(img_crop.size[0]):
+                    for y in range(img_crop.size[1]):
+                        color = img_array[x, y]
+                        if isinstance(color, tuple) and len(color) >= 3:
+                            if not (abs(color[0] - 0x17) <= 5 and abs(color[1] - 0x17) <= 5 and abs(color[2] - 0x17) <= 5):
+                                is_all_dark = False
+                                break
+                    if not is_all_dark:
+                        break
+                
+                if not is_all_dark:
+                    break
+                
+                min_sleep += 0.5
+                max_sleep += 0.5
             
-            screenshot = self.driver.get_screenshot_as_png()
-            
-            img = Image.open(io.BytesIO(screenshot))
             width, height = img.size
-            
             img_crop = img.crop((0, 41, width, height))
-            
             img_array = img_crop.load()
             new_width, new_height = img_crop.size
             
@@ -167,7 +188,6 @@ class HitomiScraper:
                     self.driver.quit()
                 except:
                     pass
-                    
         
 class NHentaiScraper:
     def __init__(self):
