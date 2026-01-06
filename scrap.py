@@ -9,6 +9,121 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 
+class HitomiScraper:
+    def __init__(self):
+        self.session = requests.Session()
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+        self.driver = None
+    
+    def _create_driver(self):
+        try:
+            base_dir = Path(__file__).parent.absolute()
+            selenium_dir = base_dir / "selenium"
+            
+            chrome_path = selenium_dir / "chrome"
+            chromedriver_path = selenium_dir / "chromedriver"
+            
+            chrome_options = Options()
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--window-size=1920,1080')
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            
+            if chrome_path.exists():
+                chrome_options.binary_location = str(chrome_path)
+            
+            if chromedriver_path.exists():
+                service = Service(executable_path=str(chromedriver_path))
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                driver = webdriver.Chrome(options=chrome_options)
+            
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            return driver
+        except Exception as e:
+            print(f"Error creando driver: {e}")
+            return None
+    
+    def page(self, g, p):
+        url = f"https://hitomi.la/reader/{g}.html#{p}"
+        
+        driver = self._create_driver()
+        if not driver:
+            return json.dumps({
+                "title": "",
+                "actual_page": str(p),
+                "total_pages": "0",
+                "imagenes": {},
+                "error": "No se pudo crear el driver"
+            })
+        
+        try:
+            driver.get(url)
+            time.sleep(2)
+            
+            page_source = driver.page_source
+            soup = BeautifulSoup(page_source, 'html.parser')
+            
+            title = soup.find('title').text if soup.find('title') else ""
+            
+            total_pages = 0
+            select_element = soup.find('select', {'id': 'single-page-select'})
+            if select_element:
+                options = select_element.find_all('option')
+                if options:
+                    last_option = options[-1]
+                    total_pages = int(last_option.get('value', 0))
+            
+            images_data = {}
+            picture_elements = soup.find_all('picture')
+            for idx, picture in enumerate(picture_elements, 1):
+                img_element = picture.find('img')
+                if img_element and 'src' in img_element.attrs:
+                    img_url = img_element['src']
+                    try:
+                        response = requests.get(img_url, timeout=10)
+                        if response.status_code == 200:
+                            img_base64 = base64.b64encode(response.content).decode('utf-8')
+                            images_data[f"img_{idx}"] = img_base64
+                    except:
+                        continue
+            
+            result = {
+                "title": title,
+                "actual_page": str(p),
+                "total_pages": str(total_pages),
+                "imagenes": images_data
+            }
+            
+            return json.dumps(result, indent=2)
+            
+        except Exception as e:
+            return json.dumps({
+                "title": "",
+                "actual_page": str(p),
+                "total_pages": "0",
+                "imagenes": {},
+                "error": str(e)
+            })
+        
+        finally:
+            try:
+                driver.quit()
+            except:
+                pass
+
 class NHentaiScraper:
     def __init__(self):
         self.session = requests.Session()
