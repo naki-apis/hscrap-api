@@ -18,22 +18,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image
 
-import requests
-import json
-import time
-import random
-import io
-import base64
-import zipfile
-import re
-from pathlib import Path
-from PIL import Image
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from bs4 import BeautifulSoup
-
 class HitomiScraper:
     def __init__(self):
         self.session = requests.Session()
