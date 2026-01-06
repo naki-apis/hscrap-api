@@ -61,6 +61,91 @@ class HitomiScraper:
             except Exception as e2:
                 return False
     
+    def _esperar_imagen_cargada(self, timeout=3):
+        try:
+            WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((By.TAG_NAME, "img"))
+            )
+            
+            WebDriverWait(self.driver, timeout).until(
+                lambda d: any(
+                    img.is_displayed() and 
+                    img.get_attribute('src') and 
+                    (img.get_attribute('src').endswith('.webp') or 'webp' in img.get_attribute('src') or
+                     img.get_attribute('src').endswith('.jpg') or 'jpg' in img.get_attribute('src') or
+                     img.get_attribute('src').endswith('.png') or 'png' in img.get_attribute('src'))
+                    for img in d.find_elements(By.TAG_NAME, 'img')
+                )
+            )
+            return True
+        except:
+            return False
+    
+    def _obtener_url_imagen_pagina(self, url_pagina, max_intentos=3):
+        intento = 0
+        while intento < max_intentos:
+            try:
+                self.driver.get(url_pagina)
+                
+                if not self._esperar_imagen_cargada(timeout=3):
+                    raise Exception("Timeout esperando imagen")
+                
+                urls_imagenes = []
+                
+                picture_elements = self.driver.find_elements(By.TAG_NAME, 'picture')
+                for picture in picture_elements:
+                    sources = picture.find_elements(By.TAG_NAME, 'source')
+                    for source in sources:
+                        srcset = source.get_attribute('srcset')
+                        if srcset and ('webp' in srcset or '.webp' in srcset):
+                            urls = [url.strip() for url in srcset.split(',')]
+                            for url_desc in urls:
+                                if 'webp' in url_desc or '.webp' in url_desc:
+                                    url_parte = url_desc.split()[0] if ' ' in url_desc else url_desc
+                                    if url_parte.startswith('//'):
+                                        url_parte = 'https:' + url_parte
+                                    urls_imagenes.append(url_parte)
+                    
+                    img_elements = picture.find_elements(By.TAG_NAME, 'img')
+                    for img in img_elements:
+                        src = img.get_attribute('src')
+                        if src and ('.webp' in src or 'webp' in src):
+                            if src.startswith('//'):
+                                src = 'https:' + src
+                            urls_imagenes.append(src)
+                
+                img_elements = self.driver.find_elements(By.TAG_NAME, 'img')
+                for img in img_elements:
+                    src = img.get_attribute('src')
+                    if src and ('.webp' in src or 'webp' in src or '.jpg' in src or '.png' in src):
+                        if src.startswith('//'):
+                            src = 'https:' + src
+                        urls_imagenes.append(src)
+                
+                if urls_imagenes:
+                    seen = set()
+                    unique_urls = []
+                    for url in urls_imagenes:
+                        if url not in seen:
+                            seen.add(url)
+                            unique_urls.append(url)
+                    
+                    for url in unique_urls:
+                        if 'gold-usergeneratedcontent.net' in url and ('.webp' in url or '.jpg' in url or '.png' in url):
+                            return url
+                    
+                    if unique_urls:
+                        return unique_urls[0]
+                
+                raise Exception("No se encontraron imágenes válidas")
+                    
+            except Exception as e:
+                intento += 1
+                tiempo_espera = 2
+                if intento < max_intentos:
+                    time.sleep(tiempo_espera)
+        return None
+    
     def page(self, g, p):
         try:
             if not self._create_driver():
@@ -73,45 +158,51 @@ class HitomiScraper:
                 })
             
             url = f"https://hitomi.la/reader/{g}.html#{p}"
-            self.driver.get(url)
             
-            max_attempts = 3
-            html_content = ""
+            img_url = self._obtener_url_imagen_pagina(url)
             
-            for attempt in range(max_attempts):
-                wait_time = 2 + attempt * 2
-                time.sleep(wait_time)
-                page_source = self.driver.page_source
-                if page_source and len(page_source) > 100:
-                    html_content = page_source
-                    break
+            if not img_url:
+                return json.dumps({
+                    "title": "",
+                    "actual_page": str(p),
+                    "total_pages": "0",
+                    "imagenes": {},
+                    "error": "No se pudo obtener la URL de la imagen"
+                })
             
-            soup = BeautifulSoup(html_content, 'html.parser')
+            title = self.driver.title if self.driver.title else ""
             
-            title = soup.find('title').text if soup.find('title') else ""
-            
+            select_element = self.driver.find_element(By.ID, 'single-page-select')
             total_pages = 0
-            select_element = soup.find('select', {'id': 'single-page-select'})
             if select_element:
-                options = select_element.find_all('option')
+                options = select_element.find_elements(By.TAG_NAME, 'option')
                 if options:
                     last_option = options[-1]
-                    total_pages = int(last_option.get('value', 0))
+                    total_pages = int(last_option.get_attribute('value'))
             
             images_data = {}
-            picture_elements = soup.find_all('picture')
-            for idx, picture in enumerate(picture_elements, 1):
-                img_element = picture.find('img')
-                if img_element and 'src' in img_element.attrs:
-                    img_url = img_element['src']
-                    try:
-                        response = requests.get(img_url, headers=self.headers, timeout=10)
-                        if response.status_code == 200:
-                            import base64
-                            img_base64 = base64.b64encode(response.content).decode('utf-8')
-                            images_data[f"img_{idx}"] = img_base64
-                    except:
-                        continue
+            
+            try:
+                download_headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Referer': 'https://hitomi.la/',
+                    'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                }
+                
+                response = requests.get(img_url, headers=download_headers, timeout=30, stream=True)
+                if response.status_code == 200:
+                    import base64
+                    img_data = b''
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            img_data += chunk
+                    
+                    if img_data:
+                        img_base64 = base64.b64encode(img_data).decode('utf-8')
+                        images_data["img_1"] = img_base64
+            except Exception as img_error:
+                pass
             
             result = {
                 "title": title,
@@ -136,7 +227,6 @@ class HitomiScraper:
                     self.driver.quit()
                 except:
                     pass
-
 class NHentaiScraper:
     def __init__(self):
         self.session = requests.Session()
