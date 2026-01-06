@@ -147,6 +147,39 @@ class HentaiAPI:
             filename = f"{uuid.uuid4().hex}.json"
             return Response(json_result, mimetype="application/json",
                             headers={"Content-Disposition": f"attachment;filename={filename}"})
+        
+        @self.app.route('/hitom/')
+        def hitomi_multipage():
+            g = request.args.get('g', '')
+            p = request.args.get('p', '1')
+            f = request.args.get('f', None)
+            
+            if not g:
+                return jsonify({"error": "Parámetro 'g' (gallery) requerido"}), 400
+            
+            try:
+                start_page = int(p)
+            except:
+                start_page = 1
+            
+            end_page = None
+            if f is not None:
+                try:
+                    end_page = int(f)
+                except:
+                    pass
+            
+            zip_buffer = self.hitomi_scraper.multipage(g, start_page, end_page)
+            
+            if zip_buffer is None:
+                return jsonify({"error": "Error al descargar las páginas"}), 500
+            
+            filename = f"{g}.cbz"
+            return Response(
+                zip_buffer.getvalue(),
+                mimetype="application/zip",
+                headers={"Content-Disposition": f"attachment;filename={filename}"}
+            )
     
     def run(self, host='0.0.0.0', port=5000):
         self.app.run(host=host, port=port, debug=False, use_reloader=False)
