@@ -6,6 +6,9 @@ import time
 import random
 import json
 import os
+import io
+import base64
+import zipfile
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -14,8 +17,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image
-import io
-import base64
 
 class HitomiScraper:
     def __init__(self):
@@ -182,6 +183,145 @@ class HitomiScraper:
                 "img": "",
                 "error": str(e)
             })
+        finally:
+            if self.driver:
+                try:
+                    self.driver.quit()
+                except:
+                    pass
+
+    def multipage(self, g, p, f=None):
+        zip_buffer = io.BytesIO()
+        
+        try:
+            if not self._create_driver():
+                return None
+            
+            url = f"https://hitomi.la/reader/{g}.html#{p}"
+            self.driver.get(url)
+            
+            time.sleep(2)
+            
+            page_source = self.driver.page_source
+            soup = BeautifulSoup(page_source, 'html.parser')
+            
+            total_pages = 0
+            select_element = soup.find('select', {'id': 'single-page-select'})
+            if select_element:
+                options = select_element.find_all('option')
+                if options:
+                    last_option = options[-1]
+                    total_pages = int(last_option.get('value', 0))
+            
+            if f is None:
+                f = total_pages
+            
+            current_page = p
+            padding = len(str(total_pages))
+            
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                while current_page <= f:
+                    try:
+                        min_sleep = 0.5
+                        max_sleep = 1.0
+                        wait_attempts = 0
+                        max_wait_attempts = 10
+                        
+                        while wait_attempts < max_wait_attempts:
+                            time.sleep(random.uniform(min_sleep, max_sleep))
+                            
+                            screenshot = self.driver.get_screenshot_as_png()
+                            img = Image.open(io.BytesIO(screenshot))
+                            
+                            img_crop = img.crop((0, 41, img.size[0], img.size[1]))
+                            img_array = img_crop.load()
+                            
+                            is_all_dark = True
+                            for x in range(img_crop.size[0]):
+                                for y in range(img_crop.size[1]):
+                                    color = img_array[x, y]
+                                    if isinstance(color, tuple) and len(color) >= 3:
+                                        if not (abs(color[0] - 0x17) <= 5 and abs(color[1] - 0x17) <= 5 and abs(color[2] - 0x17) <= 5):
+                                            is_all_dark = False
+                                            break
+                                if not is_all_dark:
+                                    break
+                            
+                            if not is_all_dark:
+                                break
+                            
+                            wait_attempts += 1
+                            min_sleep += 0.3
+                            max_sleep += 0.3
+                        
+                        if wait_attempts >= max_wait_attempts:
+                            print(f"Página {current_page} permanece en negro, omitiendo...")
+                        
+                        width, height = img.size
+                        img_crop = img.crop((0, 41, width, height))
+                        img_array = img_crop.load()
+                        new_width, new_height = img_crop.size
+                        
+                        left_crop = 0
+                        right_crop = new_width
+                        bottom_crop = new_height
+                        
+                        for x in range(new_width):
+                            color = img_array[x, 0]
+                            if isinstance(color, tuple) and len(color) >= 3:
+                                if abs(color[0] - 0x17) <= 5 and abs(color[1] - 0x17) <= 5 and abs(color[2] - 0x17) <= 5:
+                                    left_crop = x + 1
+                                else:
+                                    break
+                        
+                        for x in range(new_width - 1, -1, -1):
+                            color = img_array[x, 0]
+                            if isinstance(color, tuple) and len(color) >= 3:
+                                if abs(color[0] - 0x17) <= 5 and abs(color[1] - 0x17) <= 5 and abs(color[2] - 0x17) <= 5:
+                                    right_crop = x
+                                else:
+                                    break
+                        
+                        for y in range(new_height - 1, -1, -1):
+                            color = img_array[new_width // 2, y]
+                            if isinstance(color, tuple) and len(color) >= 3:
+                                if abs(color[0] - 0x17) <= 5 and abs(color[1] - 0x17) <= 5 and abs(color[2] - 0x17) <= 5:
+                                    bottom_crop = y
+                                else:
+                                    break
+                        
+                        if left_crop < right_crop and bottom_crop > 0:
+                            final_img = img_crop.crop((left_crop, 0, right_crop, bottom_crop))
+                        else:
+                            final_img = img_crop
+                        
+                        img_buffer = io.BytesIO()
+                        final_img.save(img_buffer, format="PNG")
+                        
+                        page_name = str(current_page).zfill(padding)
+                        zip_file.writestr(f"{page_name}.png", img_buffer.getvalue())
+                        
+                        if current_page < f:
+                            try:
+                                next_button = self.driver.find_element(By.ID, "nextPanel")
+                                next_button.click()
+                                time.sleep(0.3)
+                            except Exception as e:
+                                print(f"No se pudo hacer click en Next: {str(e)}")
+                                break
+                        
+                        current_page += 1
+                        
+                    except Exception as e:
+                        print(f"Error en página {current_page}: {str(e)}")
+                        break
+            
+            zip_buffer.seek(0)
+            return zip_buffer
+        
+        except Exception as e:
+            print(f"Error general: {str(e)}")
+            return None
         finally:
             if self.driver:
                 try:
