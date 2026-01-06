@@ -13,7 +13,6 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from pathlib import Path
 from PIL import Image
 import io
 import base64
@@ -76,14 +75,14 @@ class HitomiScraper:
                     "title": "",
                     "actual_page": str(p),
                     "total_pages": "0",
-                    "imagenes": {},
+                    "img": "",
                     "error": "No se pudo crear el driver"
                 })
             
             url = f"https://hitomi.la/reader/{g}.html#{p}"
             self.driver.get(url)
             
-            time.sleep(3)
+            time.sleep(random.uniform(0.5, 1))
             
             screenshot = self.driver.get_screenshot_as_png()
             
@@ -132,8 +131,6 @@ class HitomiScraper:
             final_img.save(buffered, format="PNG")
             img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
             
-            images_data = {"img_1": img_base64}
-            
             page_source = self.driver.page_source
             soup = BeautifulSoup(page_source, 'html.parser')
             
@@ -151,17 +148,17 @@ class HitomiScraper:
                 "title": title,
                 "actual_page": str(p),
                 "total_pages": str(total_pages),
-                "imagenes": images_data
+                "img": img_base64
             }
             
-            return json.dumps(result, indent=2)
+            return json.dumps(result)
             
         except Exception as e:
             return json.dumps({
                 "title": "",
                 "actual_page": str(p),
                 "total_pages": "0",
-                "imagenes": {},
+                "img": "",
                 "error": str(e)
             })
         finally:
