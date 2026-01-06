@@ -14,6 +14,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from pathlib import Path
+from PIL import Image
+import io
+import base64
 
 class HitomiScraper:
     def __init__(self):
@@ -43,10 +46,8 @@ class HitomiScraper:
             
             self.driver = webdriver.Chrome(options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            return driver
+            return True
         except Exception as e:
-            print(f"Error creando driver básico: {e}")
-            
             try:
                 base_dir = Path(__file__).parent.absolute()
                 selenium_dir = base_dir / "selenium"
@@ -56,7 +57,6 @@ class HitomiScraper:
                 
                 if chrome_path.exists():
                     chrome_options.binary_location = str(chrome_path)
-                    print(f"Usando Chrome en: {chrome_path}")
                 
                 if chromedriver_path.exists():
                     service = Service(executable_path=str(chromedriver_path))
@@ -65,139 +65,76 @@ class HitomiScraper:
                     self.driver = webdriver.Chrome(options=chrome_options)
                 
                 self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-                print("Driver creado con rutas personalizadas")
-                return driver
+                return True
             except Exception as e2:
-                print(f"Error también con rutas personalizadas: {e2}")
                 return False
     
-    def esperar_imagen_cargada(self, driver, timeout=3):
-        try:
-            WebDriverWait(driver, timeout).until(
-                EC.presence_of_element_located((By.TAG_NAME, "img"))
-            )
-            
-            WebDriverWait(driver, timeout).until(
-                lambda d: any(
-                    img.is_displayed() and 
-                    img.get_attribute('src') and 
-                    (img.get_attribute('src').endswith('.webp') or 'webp' in img.get_attribute('src') or
-                     img.get_attribute('src').endswith('.jpg') or 'jpg' in img.get_attribute('src') or
-                     img.get_attribute('src').endswith('.png') or 'png' in img.get_attribute('src'))
-                    for img in d.find_elements(By.TAG_NAME, 'img')
-                )
-            )
-            return True
-        except:
-            return False
-    
-    def descargar_imagen_con_reintentos(self, url, max_intentos=3):
-        intento = 0
-        while intento < max_intentos:
-            try:
-                response = requests.get(url, headers=self.headers, timeout=30, stream=True)
-                if response.status_code == 200:
-                    content = b''
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            content += chunk
-                    if content:
-                        import base64
-                        img_base64 = base64.b64encode(content).decode('utf-8')
-                        return img_base64
-                    else:
-                        raise Exception("Contenido vacío")
-                else:
-                    raise Exception(f"HTTP {response.status_code}")
-            except Exception as e:
-                intento += 1
-                tiempo_espera = 2
-                if intento < max_intentos:
-                    time.sleep(tiempo_espera)
-        return None
-    
-    def obtener_url_imagen_pagina(self, driver, max_intentos=3):
-        intento = 0
-        while intento < max_intentos:
-            try:
-                if not self.esperar_imagen_cargada(driver, timeout=3):
-                    raise Exception("Timeout esperando imagen")
-                
-                urls_imagenes = []
-                
-                picture_elements = driver.find_elements(By.TAG_NAME, 'picture')
-                for picture in picture_elements:
-                    sources = picture.find_elements(By.TAG_NAME, 'source')
-                    for source in sources:
-                        srcset = source.get_attribute('srcset')
-                        if srcset and ('webp' in srcset or '.webp' in srcset):
-                            urls = [url.strip() for url in srcset.split(',')]
-                            for url_desc in urls:
-                                if 'webp' in url_desc or '.webp' in url_desc:
-                                    url_parte = url_desc.split()[0] if ' ' in url_desc else url_desc
-                                    if url_parte.startswith('//'):
-                                        url_parte = 'https:' + url_parte
-                                    urls_imagenes.append(url_parte)
-                    
-                    img_elements = picture.find_elements(By.TAG_NAME, 'img')
-                    for img in img_elements:
-                        src = img.get_attribute('src')
-                        if src and ('.webp' in src or 'webp' in src):
-                            if src.startswith('//'):
-                                src = 'https:' + src
-                            urls_imagenes.append(src)
-                
-                img_elements = driver.find_elements(By.TAG_NAME, 'img')
-                for img in img_elements:
-                    src = img.get_attribute('src')
-                    if src and ('.webp' in src or 'webp' in src or '.jpg' in src or '.png' in src):
-                        if src.startswith('//'):
-                            src = 'https:' + src
-                        urls_imagenes.append(src)
-                
-                if urls_imagenes:
-                    seen = set()
-                    unique_urls = []
-                    for url in urls_imagenes:
-                        if url not in seen:
-                            seen.add(url)
-                            unique_urls.append(url)
-                    
-                    for url in unique_urls:
-                        if 'gold-usergeneratedcontent.net' in url and ('.webp' in url or '.jpg' in url or '.png' in url):
-                            return url
-                    
-                    if unique_urls:
-                        return unique_urls[0]
-                
-                raise Exception("No se encontraron imágenes válidas")
-                    
-            except Exception as e:
-                intento += 1
-                tiempo_espera = 2
-                if intento < max_intentos:
-                    time.sleep(tiempo_espera)
-        return None
-    
     def page(self, g, p):
-        url = f"https://hitomi.la/reader/{g}.html#{p}"
-        
-        driver = self._create_driver()
-        if not driver:
-            return json.dumps({
-                "title": "",
-                "actual_page": str(p),
-                "total_pages": "0",
-                "imagenes": {},
-                "error": "No se pudo crear el driver"
-            })
-        
         try:
-            driver.get(url)
-            time.sleep(2)
+            if not self._create_driver():
+                return json.dumps({
+                    "title": "",
+                    "actual_page": str(p),
+                    "total_pages": "0",
+                    "imagenes": {},
+                    "error": "No se pudo crear el driver"
+                })
             
-            page_source = driver.page_source
+            url = f"https://hitomi.la/reader/{g}.html#{p}"
+            self.driver.get(url)
             
+            time.sleep(3)
+            
+            screenshot = self.driver.get_screenshot_as_png()
+            
+            img = Image.open(io.BytesIO(screenshot))
+            width, height = img.size
+            
+            img_crop = img.crop((0, 41, width, height))
+            
+            img_array = img_crop.load()
+            new_width, new_height = img_crop.size
+            
+            left_crop = 0
+            right_crop = new_width
+            bottom_crop = new_height
+            
+            for x in range(new_width):
+                color = img_array[x, 0]
+                if isinstance(color, tuple) and len(color) >= 3:
+                    if abs(color[0] - 0x17) <= 5 and abs(color[1] - 0x17) <= 5 and abs(color[2] - 0x17) <= 5:
+                        left_crop = x + 1
+                    else:
+                        break
+            
+            for x in range(new_width - 1, -1, -1):
+                color = img_array[x, 0]
+                if isinstance(color, tuple) and len(color) >= 3:
+                    if abs(color[0] - 0x17) <= 5 and abs(color[1] - 0x17) <= 5 and abs(color[2] - 0x17) <= 5:
+                        right_crop = x
+                    else:
+                        break
+            
+            for y in range(new_height - 1, -1, -1):
+                color = img_array[new_width // 2, y]
+                if isinstance(color, tuple) and len(color) >= 3:
+                    if abs(color[0] - 0x17) <= 5 and abs(color[1] - 0x17) <= 5 and abs(color[2] - 0x17) <= 5:
+                        bottom_crop = y
+                    else:
+                        break
+            
+            if left_crop < right_crop and bottom_crop > 0:
+                final_img = img_crop.crop((left_crop, 0, right_crop, bottom_crop))
+            else:
+                final_img = img_crop
+            
+            buffered = io.BytesIO()
+            final_img.save(buffered, format="PNG")
+            img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+            
+            images_data = {"img_1": img_base64}
+            
+            page_source = self.driver.page_source
             soup = BeautifulSoup(page_source, 'html.parser')
             
             title = soup.find('title').text if soup.find('title') else ""
@@ -209,40 +146,6 @@ class HitomiScraper:
                 if options:
                     last_option = options[-1]
                     total_pages = int(last_option.get('value', 0))
-            
-            images_data = {}
-            
-            imagen_url = self.obtener_url_imagen_pagina(driver)
-            
-            if imagen_url:
-                img_base64 = self.descargar_imagen_con_reintentos(imagen_url)
-                if img_base64:
-                    images_data["img_1"] = img_base64
-            
-            if not images_data:
-                picture_elements = soup.find_all('picture')
-                
-                for idx, picture in enumerate(picture_elements, 1):
-                    img_element = picture.find('img')
-                    if img_element:
-                        img_url = None
-                        if 'src' in img_element.attrs:
-                            img_url = img_element['src']
-                        elif 'data-src' in img_element.attrs:
-                            img_url = img_element['data-src']
-                        elif 'data-cfsrc' in img_element.attrs:
-                            img_url = img_element['data-cfsrc']
-                        
-                        if img_url:
-                            if not img_url.startswith('http'):
-                                if img_url.startswith('//'):
-                                    img_url = 'https:' + img_url
-                                else:
-                                    img_url = 'https://hitomi.la' + img_url
-                            
-                            img_base64 = self.descargar_imagen_con_reintentos(img_url)
-                            if img_base64:
-                                images_data[f"img_{idx}"] = img_base64
             
             result = {
                 "title": title,
@@ -261,13 +164,14 @@ class HitomiScraper:
                 "imagenes": {},
                 "error": str(e)
             })
-        
         finally:
-            try:
-                driver.quit()
-            except:
-                pass
-                
+            if self.driver:
+                try:
+                    self.driver.quit()
+                except:
+                    pass
+                    
+        
 class NHentaiScraper:
     def __init__(self):
         self.session = requests.Session()
