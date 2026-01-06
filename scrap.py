@@ -5,10 +5,15 @@ import math
 import time
 import random
 import json
+import os
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from pathlib import Path
 
 class HitomiScraper:
     def __init__(self):
@@ -27,47 +32,42 @@ class HitomiScraper:
     def _create_driver(self):
         try:
             chrome_options = Options()
-            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--headless=new')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
             chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             
-            self.driver = webdriver.Chrome(options=chrome_options)
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            return True
+            base_dir = Path(__file__).parent.absolute()
+            selenium_dir = base_dir / "selenium"
+            
+            chrome_path = selenium_dir / "chrome"
+            chromedriver_path = selenium_dir / "chromedriver"
+            
+            if chrome_path.exists():
+                chrome_options.binary_location = str(chrome_path)
+            
+            if chromedriver_path.exists():
+                service = Service(executable_path=str(chromedriver_path))
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                driver = webdriver.Chrome(options=chrome_options)
+            
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            return driver
         except Exception as e:
-            try:
-                base_dir = Path(__file__).parent.absolute()
-                selenium_dir = base_dir / "selenium"
-                
-                chrome_path = selenium_dir / "chrome"
-                chromedriver_path = selenium_dir / "chromedriver"
-                
-                if chrome_path.exists():
-                    chrome_options.binary_location = str(chrome_path)
-                
-                if chromedriver_path.exists():
-                    service = Service(executable_path=str(chromedriver_path))
-                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                else:
-                    self.driver = webdriver.Chrome(options=chrome_options)
-                
-                self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-                return True
-            except Exception as e2:
-                return False
+            return None
     
-    def _esperar_imagen_cargada(self, timeout=3):
+    def esperar_imagen_cargada(self, driver, timeout=3):
         try:
-            WebDriverWait(self.driver, timeout).until(
+            WebDriverWait(driver, timeout).until(
                 EC.presence_of_element_located((By.TAG_NAME, "img"))
             )
             
-            WebDriverWait(self.driver, timeout).until(
+            WebDriverWait(driver, timeout).until(
                 lambda d: any(
                     img.is_displayed() and 
                     img.get_attribute('src') and 
@@ -81,18 +81,41 @@ class HitomiScraper:
         except:
             return False
     
-    def _obtener_url_imagen_pagina(self, url_pagina, max_intentos=3):
+    def descargar_imagen_con_reintentos(self, url, max_intentos=3):
         intento = 0
         while intento < max_intentos:
             try:
-                self.driver.get(url_pagina)
-                
-                if not self._esperar_imagen_cargada(timeout=3):
+                response = requests.get(url, headers=self.headers, timeout=30, stream=True)
+                if response.status_code == 200:
+                    content = b''
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            content += chunk
+                    if content:
+                        import base64
+                        img_base64 = base64.b64encode(content).decode('utf-8')
+                        return img_base64
+                    else:
+                        raise Exception("Contenido vacío")
+                else:
+                    raise Exception(f"HTTP {response.status_code}")
+            except Exception as e:
+                intento += 1
+                tiempo_espera = 2
+                if intento < max_intentos:
+                    time.sleep(tiempo_espera)
+        return None
+    
+    def obtener_url_imagen_pagina(self, driver, max_intentos=3):
+        intento = 0
+        while intento < max_intentos:
+            try:
+                if not self.esperar_imagen_cargada(driver, timeout=3):
                     raise Exception("Timeout esperando imagen")
                 
                 urls_imagenes = []
                 
-                picture_elements = self.driver.find_elements(By.TAG_NAME, 'picture')
+                picture_elements = driver.find_elements(By.TAG_NAME, 'picture')
                 for picture in picture_elements:
                     sources = picture.find_elements(By.TAG_NAME, 'source')
                     for source in sources:
@@ -114,7 +137,7 @@ class HitomiScraper:
                                 src = 'https:' + src
                             urls_imagenes.append(src)
                 
-                img_elements = self.driver.find_elements(By.TAG_NAME, 'img')
+                img_elements = driver.find_elements(By.TAG_NAME, 'img')
                 for img in img_elements:
                     src = img.get_attribute('src')
                     if src and ('.webp' in src or 'webp' in src or '.jpg' in src or '.png' in src):
@@ -147,62 +170,69 @@ class HitomiScraper:
         return None
     
     def page(self, g, p):
+        url = f"https://hitomi.la/reader/{g}.html#{p}"
+        
+        driver = self._create_driver()
+        if not driver:
+            return json.dumps({
+                "title": "",
+                "actual_page": str(p),
+                "total_pages": "0",
+                "imagenes": {},
+                "error": "No se pudo crear el driver"
+            })
+        
         try:
-            if not self._create_driver():
-                return json.dumps({
-                    "title": "",
-                    "actual_page": str(p),
-                    "total_pages": "0",
-                    "imagenes": {},
-                    "error": "No se pudo crear el driver"
-                })
+            driver.get(url)
+            time.sleep(2)
             
-            url = f"https://hitomi.la/reader/{g}.html#{p}"
+            page_source = driver.page_source
             
-            img_url = self._obtener_url_imagen_pagina(url)
+            soup = BeautifulSoup(page_source, 'html.parser')
             
-            if not img_url:
-                return json.dumps({
-                    "title": "",
-                    "actual_page": str(p),
-                    "total_pages": "0",
-                    "imagenes": {},
-                    "error": "No se pudo obtener la URL de la imagen"
-                })
+            title = soup.find('title').text if soup.find('title') else ""
             
-            title = self.driver.title if self.driver.title else ""
-            
-            select_element = self.driver.find_element(By.ID, 'single-page-select')
             total_pages = 0
+            select_element = soup.find('select', {'id': 'single-page-select'})
             if select_element:
-                options = select_element.find_elements(By.TAG_NAME, 'option')
+                options = select_element.find_all('option')
                 if options:
                     last_option = options[-1]
-                    total_pages = int(last_option.get_attribute('value'))
+                    total_pages = int(last_option.get('value', 0))
             
             images_data = {}
             
-            try:
-                download_headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Referer': 'https://hitomi.la/',
-                    'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                }
+            imagen_url = self.obtener_url_imagen_pagina(driver)
+            
+            if imagen_url:
+                img_base64 = self.descargar_imagen_con_reintentos(imagen_url)
+                if img_base64:
+                    images_data["img_1"] = img_base64
+            
+            if not images_data:
+                picture_elements = soup.find_all('picture')
                 
-                response = requests.get(img_url, headers=download_headers, timeout=30, stream=True)
-                if response.status_code == 200:
-                    import base64
-                    img_data = b''
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            img_data += chunk
-                    
-                    if img_data:
-                        img_base64 = base64.b64encode(img_data).decode('utf-8')
-                        images_data["img_1"] = img_base64
-            except Exception as img_error:
-                pass
+                for idx, picture in enumerate(picture_elements, 1):
+                    img_element = picture.find('img')
+                    if img_element:
+                        img_url = None
+                        if 'src' in img_element.attrs:
+                            img_url = img_element['src']
+                        elif 'data-src' in img_element.attrs:
+                            img_url = img_element['data-src']
+                        elif 'data-cfsrc' in img_element.attrs:
+                            img_url = img_element['data-cfsrc']
+                        
+                        if img_url:
+                            if not img_url.startswith('http'):
+                                if img_url.startswith('//'):
+                                    img_url = 'https:' + img_url
+                                else:
+                                    img_url = 'https://hitomi.la' + img_url
+                            
+                            img_base64 = self.descargar_imagen_con_reintentos(img_url)
+                            if img_base64:
+                                images_data[f"img_{idx}"] = img_base64
             
             result = {
                 "title": title,
@@ -221,12 +251,13 @@ class HitomiScraper:
                 "imagenes": {},
                 "error": str(e)
             })
+        
         finally:
-            if self.driver:
-                try:
-                    self.driver.quit()
-                except:
-                    pass
+            try:
+                driver.quit()
+            except:
+                pass
+                
 class NHentaiScraper:
     def __init__(self):
         self.session = requests.Session()
