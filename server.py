@@ -1,11 +1,14 @@
 from flask import Flask, jsonify, request, send_file
-from scrap import NHentaiScraper, SHentaiScraper
+import json
+import base64
+from scrap import NHentaiScraper, SHentaiScraper, HitomiScraper
 
 class HentaiAPI:
     def __init__(self):
         self.app = Flask(__name__)
         self.nhentai_scraper = NHentaiScraper()
         self.shentai_scraper = SHentaiScraper()
+        self.hitomi_scraper = HitomiScraper()
         self.setup_routes()
     
     def setup_routes(self):
@@ -69,6 +72,27 @@ class HentaiAPI:
             
             results = self.shentai_scraper.data(code)
             return jsonify(results)
+        
+        @self.app.route('/hito/')
+        def hitomi_page():
+            g = request.args.get('g', '')
+            p = request.args.get('p', '1')
+            
+            if not g:
+                return jsonify({"error": "Parámetro 'g' (gallery) requerido"}), 400
+            
+            try:
+                page_num = int(p)
+            except:
+                page_num = 1
+            
+            json_result = self.hitomi_scraper.page(g, page_num)
+            
+            try:
+                result_dict = json.loads(json_result)
+                return jsonify(result_dict)
+            except json.JSONDecodeError:
+                return jsonify({"error": "Error procesando respuesta", "raw_response": json_result})
     
     def run(self, host='0.0.0.0', port=5000):
         self.app.run(host=host, port=port, debug=False, use_reloader=False)
